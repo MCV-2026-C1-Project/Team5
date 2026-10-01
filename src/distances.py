@@ -38,6 +38,7 @@ def jensen_shannon(q, db):
     return (kl_q + kl_db) / 2
 
 def cosine_similarity(q, db):
+    """Cosine similarity (similarity, 1 for identical histograms)."""
     return np.sum(q * db, axis=1) / (np.linalg.norm(q) * np.linalg.norm(db, axis=1))
 
 # name -> (function, is_similarity)

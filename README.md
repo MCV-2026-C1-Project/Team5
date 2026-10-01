@@ -37,6 +37,9 @@ With no arguments, `evaluate.py` prints the table of every colour space and meas
 python evaluate.py
 python evaluate.py --data data --query-set qsd1_w1 --color-space lab --bins 64 --normalize --measure all
 
+# Evaluate with 95% bootstrap confidence intervals (e.g. 1000 resamples)
+python evaluate.py --color-space lab --measure all --bootstrap 1000
+
 # Task 4: top-10 results for the test set, saved to outputs/result.pkl
 python make_submission.py
 python make_submission.py --data data --query-set qst1_w1 --color-space lab --bins 64 --normalize --measure l1 --output outputs/result.pkl
@@ -59,12 +62,11 @@ normalised in the chosen colour space: the brightness channel (L or Y) is shifte
 mean 128 and scaled to standard deviation 50; the two colour channels are shifted to
 mean 128. This keeps the shape of the histograms and removes the shift. 
 
-**Measures.** Euclidean, L1 and chi-squared are distances; histogram intersection and
-the Hellinger kernel are similarities. The convention in the code is "lower = more
+**Measures.** Euclidean, L1, chi-squared, and EMD are distances; histogram intersection,
+cosine, and the Hellinger kernel are similarities. The convention in the code is "lower = more
 similar": similarities are negated, so retrieval always sorts in ascending order (with
 a stable sort, so ties are reproducible).
 
 **Metric.** mAP@K, the mean over the queries of the average precision at K. With one
 correct painting per query, AP@K is 1/rank if the correct painting is in the top K and
-0 otherwise.
-
+0 otherwise. Bootstrap resampling can be used to compute 95% confidence intervals across queries.
