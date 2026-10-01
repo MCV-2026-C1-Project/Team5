@@ -37,6 +37,9 @@ def jensen_shannon(q, db):
     kl_db = np.sum(db * np.log((db + 1e-10) / (m + 1e-10)), axis=1)
     return (kl_q + kl_db) / 2
 
+def cosine_similarity(q, db):
+    return np.sum(q * db, axis=1) / (np.linalg.norm(q) * np.linalg.norm(db, axis=1))
+
 # name -> (function, is_similarity)
 MEASURES = {
     "euclidean": (euclidean, False),
@@ -46,6 +49,7 @@ MEASURES = {
     "hellinger": (hellinger, True),
     "emd": (emd, False),
     "js": (jensen_shannon, False),
+    "cosine": (cosine_similarity, True),
 }
 
 def to_distance(q, db, measure):
