@@ -59,8 +59,11 @@ def normalize_shift(img):
     # calcHist ignores values outside the range, so clip them into the first and last bin.
     return np.clip(img, 0, 255.99)
 
-def compute_histogram(img_bgr, color_space, bins, normalize=False):
-    """Concatenated per-channel histograms, shape (channels * bins,), summing to 1."""
+def compute_histogram(img_bgr, color_space, bins, normalize=False, grid=1):
+    """Per-channel histograms of each block of a grid x grid split, concatenated.
+
+    Shape (grid * grid * channels * bins,), summing to 1. Each histogram is still 1D.
+    """
     if color_space not in COLOR_SPACES:
         raise ValueError(f"Unknown colour space '{color_space}', choose from {list(COLOR_SPACES)}")
     code, uppers = COLOR_SPACES[color_space]
@@ -73,16 +76,21 @@ def compute_histogram(img_bgr, color_space, bins, normalize=False):
         img = img[:, :, None]
 
     hists = []
-    for c, upper in enumerate(uppers):
-        hist = cv2.calcHist([img], [c], None, [bins], [0, upper]).ravel().astype(np.float64)
-        # Divide by the pixel count so the descriptor does not depend on image size.
-        hists.append(hist / hist.sum())
-    # Divide by the number of channels so the whole descriptor sums to 1,
+    # A grid x grid split keeps where each colour is; grid=1 is the whole image.
+    # Normalisation above is global, so every block gets the same correction.
+    for rows in np.array_split(img, grid, axis=0):
+        for block in np.array_split(rows, grid, axis=1):
+            block = np.ascontiguousarray(block)
+            for c, upper in enumerate(uppers):
+                hist = cv2.calcHist([block], [c], None, [bins], [0, upper]).ravel().astype(np.float64)
+                # Divide by the pixel count so the descriptor does not depend on image size.
+                hists.append(hist / hist.sum())
+    # Divide by the number of histograms (blocks x channels) so the whole descriptor sums to 1,
     # as the histogram measures (intersection, Hellinger, chi2) assume.
-    return np.concatenate(hists) / len(uppers)
+    return np.concatenate(hists) / len(hists)
 
-def compute_descriptors(folder, color_space, bins, normalize=False):
+def compute_descriptors(folder, color_space, bins, normalize=False, grid=1):
     """Descriptors (N, D) and integer IDs (N) of all .jpg images in a folder, in sorted order."""
     paths = list_images(folder)
-    descriptors = np.stack([compute_histogram(read_image(p), color_space, bins, normalize) for p in paths])
+    descriptors = np.stack([compute_histogram(read_image(p), color_space, bins, normalize, grid) for p in paths])
     return descriptors, [image_id(p) for p in paths]

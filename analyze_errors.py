@@ -25,11 +25,15 @@ def main():
     parser.add_argument("--query-set", default="qsd1_w1")
     parser.add_argument("--color-space", default="lab", choices=list(COLOR_SPACES))
     parser.add_argument("--bins", type=int, default=64)
+    parser.add_argument("--grid", type=int, default=1,
+                        help="split the image into grid x grid blocks and concatenate their histograms")
     parser.add_argument("--normalize", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--measure", default="l1", choices=list(MEASURES))
     parser.add_argument("--n", type=int, default=6, help="how many of the worst queries to plot")
     parser.add_argument("--output", default=os.path.join("outputs", "errors.png"))
     args = parser.parse_args()
+    if args.grid < 1:
+        parser.error("--grid must be at least 1")
     if args.normalize and args.color_space not in NORMALIZABLE:
         parser.error(f"--normalize is only defined for {', '.join(NORMALIZABLE)}: add --no-normalize")
 
@@ -38,8 +42,8 @@ def main():
     with open(os.path.join(query_dir, "gt_corresps.pkl"), "rb") as f:
         gt = pickle.load(f)
 
-    db_desc, db_ids = compute_descriptors(bbdd_dir, args.color_space, args.bins, args.normalize)
-    query_desc, _ = compute_descriptors(query_dir, args.color_space, args.bins, args.normalize)
+    db_desc, db_ids = compute_descriptors(bbdd_dir, args.color_space, args.bins, args.normalize, args.grid)
+    query_desc, _ = compute_descriptors(query_dir, args.color_space, args.bins, args.normalize, args.grid)
     # Rank the whole database so we can see where the correct painting ended up.
     ranking = retrieve(query_desc, db_desc, db_ids, args.measure, k=len(db_ids))
 
@@ -47,7 +51,7 @@ def main():
     ranks = [(ranking[i].index(gt[i][0]) + 1, i) for i in range(len(gt))]
     errors = sorted((r for r in ranks if r[0] > 1), reverse=True)
 
-    print(f"{args.color_space}, {args.measure}, {args.bins} bins, normalize={args.normalize}: "
+    print(f"{args.color_space}, {args.measure}, {args.bins} bins, grid {args.grid}, normalize={args.normalize}: "
           f"{len(gt) - len(errors)}/{len(gt)} queries correct at rank 1")
     if not errors:
         return
