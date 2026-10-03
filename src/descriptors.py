@@ -44,17 +44,30 @@ NORMALIZABLE = ("lab", "ycrcb")
 NORM_MEAN = 128.0
 NORM_STD = 50.0
 
-def normalize_shift(img):
-    """Lab or YCrCb image (float32) with the global brightness and colour shift removed.
+def to_float_space(img_bgr, color_space):
+    """Lab or YCrCb image as float32 on the OpenCV 8-bit scale, without rounding to integers.
 
-    Brightness (channel 0) is moved to a fixed mean and stretched to a fixed standard
-    deviation; the two colour channels are only moved to a fixed mean. The shape of each
-    histogram is kept, but a query that is darker, lighter or tinted maps back close to
-    the original painting.
+    In a very dark photo the colour channels vary by less than one unit, so the uint8
+    conversion would round them to a single value before normalize_shift can stretch them.
+    """
+    img = cv2.cvtColor(img_bgr.astype(np.float32) / 255, COLOR_SPACES[color_space][0])
+    if color_space == "lab":
+        # Float Lab has L in [0, 100] and a, b centred on 0; move them to the 8-bit scale.
+        return img * np.float32([255 / 100, 1, 1]) + np.float32([0, 128, 128])
+    return img * 255
+
+def normalize_shift(img):
+    """Lab or YCrCb image (float32) with the global brightness and colour change removed.
+
+    Every channel is moved to a fixed mean, and all three are stretched by the factor that
+    brings the brightness (channel 0) to a fixed standard deviation. Less light shrinks
+    brightness and colour differences by the same amount, so the colour channels are
+    stretched by the same factor. The shape of each histogram is kept, but a query that is
+    darker, lighter or tinted maps back close to the original painting.
     """
     # meanStdDev works in float64; a float32 mean over millions of pixels is not accurate enough.
     mean, std = (v.ravel() for v in cv2.meanStdDev(img))
-    scale = np.array([NORM_STD / max(std[0], 1e-6), 1.0, 1.0])
+    scale = np.full(3, NORM_STD / max(std[0], 1e-6))
     img = (img.astype(np.float32) - mean.astype(np.float32)) * scale.astype(np.float32) + NORM_MEAN
     # calcHist ignores values outside the range, so clip them into the first and last bin.
     return np.clip(img, 0, 255.99)
@@ -67,11 +80,12 @@ def compute_histogram(img_bgr, color_space, bins, normalize=False, grid=1):
     if color_space not in COLOR_SPACES:
         raise ValueError(f"Unknown colour space '{color_space}', choose from {list(COLOR_SPACES)}")
     code, uppers = COLOR_SPACES[color_space]
-    img = cv2.cvtColor(img_bgr, code)
     if normalize:
         if color_space not in NORMALIZABLE:
             raise ValueError(f"normalize is only defined for {NORMALIZABLE}, not '{color_space}'")
-        img = normalize_shift(img)
+        img = normalize_shift(to_float_space(img_bgr, color_space))
+    else:
+        img = cv2.cvtColor(img_bgr, code)
     if img.ndim == 2:
         img = img[:, :, None]
 

@@ -52,15 +52,32 @@ each entry is the list of the 10 best BBDD IDs as integers (7 means `bbdd_00007.
 
 **Descriptor.** The image is converted to one colour space (gray, RGB, HSV, Lab or
 YCrCb) and a histogram with N bins is computed for each channel over its full range
-(OpenCV 8-bit: H in [0, 180), everything else in [0, 256)). Each channel histogram is
-divided by its sum and the concatenation is divided by the number of channels, so the
-descriptor sums to 1 and does not depend on the image size.
+(OpenCV 8-bit: H in [0, 180), everything else in [0, 256)). With `--grid G` the image
+is first split into G x G blocks and the histograms of every block are concatenated, so
+the descriptor also knows where each colour is (each histogram is still 1D; G=1 is the
+whole image). Each histogram is divided by its sum and the concatenation is divided by
+the number of histograms, so the descriptor sums to 1 and does not depend on the image size.
 
 **Normalisation (`--normalize`, Lab and YCrCb only).** The queries are the paintings
 with a global change of brightness and colour. Before the histogram, each image is
-normalised in the chosen colour space: the brightness channel (L or Y) is shifted to
-mean 128 and scaled to standard deviation 50; the two colour channels are shifted to
-mean 128. This keeps the shape of the histograms and removes the shift. 
+normalised in the chosen colour space: every channel is shifted to mean 128, and all
+three are scaled by the factor that brings the brightness channel (L or Y) to standard
+deviation 50. This keeps the shape of the histograms and removes the change of light.
+
+Two details matter for very dark queries (e.g. query 26 of qsd1_w1, about 3 times
+darker than its painting):
+
+- *The colour channels are scaled too, not only shifted.* Less light shrinks
+  brightness and colour differences by the same amount, so a dark photo looks almost
+  grey. Scaling the colour channels by the brightness factor brings the colour back.
+- *The colour conversion is done in float.* In a very dark photo the colour channels
+  vary by less than one unit; the usual 8-bit conversion rounds them to a single value
+  before they can be stretched. Converting the float image keeps those differences.
+
+On qsd1_w1 this raised the best single-image result (grid 1) from mAP@5 0.87 (Lab, 64
+bins, L1) to 0.93 (Lab, 64 bins, L1; and YCrCb, 64 bins, chi-squared, which also moves
+query 26 from rank 57 to rank 3). With `--grid 2` almost every setting already reaches
+29/30 queries at rank 1, so the gain there is small (mAP@5 0.967 to 0.975 with YCrCb).
 
 **Measures.** Euclidean, L1, chi-squared, and EMD are distances; histogram intersection,
 cosine, and the Hellinger kernel are similarities. The convention in the code is "lower = more
