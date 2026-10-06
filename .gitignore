@@ -3,3 +3,7 @@ outputs/
 __pycache__/
 .venv/
 .DS_Store
+plot_common_failure.py
+plot_failures.py
+plot_test_predictions.py
+sweep.py

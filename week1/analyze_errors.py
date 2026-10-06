@@ -1,7 +1,11 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 """Tasks 1-3: list the queries whose correct painting is not ranked first and plot the worst ones."""
 
 import argparse
-import os
 import pickle
 
 import cv2
@@ -10,6 +14,8 @@ import matplotlib.pyplot as plt
 from src.descriptors import COLOR_SPACES, NORMALIZABLE, compute_descriptors, image_id, list_images, read_image
 from src.distances import MEASURES
 from src.retrieval import retrieve
+
+
 
 
 def show(ax, path, title):

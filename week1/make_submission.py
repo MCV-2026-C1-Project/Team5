@@ -1,7 +1,11 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 """Task 4: save the top-K BBDD IDs of every query as a pickled list of lists of int."""
 
 import argparse
-import os
 import pickle
 
 from src.descriptors import COLOR_SPACES, NORMALIZABLE, compute_descriptors

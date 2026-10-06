@@ -1,7 +1,11 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 """Tasks 1-3: retrieve on a query set with ground truth and print mAP@1 and mAP@5."""
 
 import argparse
-import os
 import pickle
 
 from src.descriptors import COLOR_SPACES, NORMALIZABLE, compute_descriptors
