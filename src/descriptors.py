@@ -1,5 +1,6 @@
-"""Task 1: 1D colour histogram descriptors."""
+"""Task 1: colour histogram descriptors (1D, joint 2D/3D, blocks and spatial pyramid)."""
 
+import itertools
 import os
 import re
 
@@ -72,39 +73,68 @@ def normalize_shift(img):
     # calcHist ignores values outside the range, so clip them into the first and last bin.
     return np.clip(img, 0, 255.99)
 
-def compute_histogram(img_bgr, color_space, bins, normalize=False, grid=1):
-    """Per-channel histograms of each block of a grid x grid split, concatenated.
+def channel_groups(n_channels, joint):
+    """Which channels share one histogram: 1 = each alone, 2 = every pair, 3 = all three together."""
+    if joint not in (1, 2, 3) or joint > n_channels:
+        raise ValueError(f"joint={joint} needs a colour space with at least {joint} channels")
+    return [(0, 1, 2)] if joint == 3 else list(itertools.combinations(range(n_channels), joint))
 
-    Shape (grid * grid * channels * bins,), summing to 1. Each histogram is still 1D.
-    """
+def block_histograms(img, uppers, bins, grid, joint):
+    """Histograms of every block of a grid x grid split, concatenated; the result sums to 1."""
+    hists = []
+    for rows in np.array_split(img, grid, axis=0):
+        for block in np.array_split(rows, grid, axis=1):
+            block = np.ascontiguousarray(block)
+            for channels in channel_groups(len(uppers), joint):
+                ranges = [edge for c in channels for edge in (0, uppers[c])]
+                hist = cv2.calcHist([block], list(channels), None, [bins] * len(channels), ranges)
+                hist = hist.ravel().astype(np.float64)
+                hists.append(hist / hist.sum())
+    # Divide by the number of histograms so the whole descriptor sums to 1.
+    return np.concatenate(hists) / len(hists)
+
+def convert_image(img_bgr, color_space, normalize=False):
+    """BGR image in the chosen colour space (optionally normalised), shape (H, W, channels)."""
     if color_space not in COLOR_SPACES:
         raise ValueError(f"Unknown colour space '{color_space}', choose from {list(COLOR_SPACES)}")
-    code, uppers = COLOR_SPACES[color_space]
     if normalize:
         if color_space not in NORMALIZABLE:
             raise ValueError(f"normalize is only defined for {NORMALIZABLE}, not '{color_space}'")
         img = normalize_shift(to_float_space(img_bgr, color_space))
     else:
-        img = cv2.cvtColor(img_bgr, code)
-    if img.ndim == 2:
-        img = img[:, :, None]
+        img = cv2.cvtColor(img_bgr, COLOR_SPACES[color_space][0])
+    return img[:, :, None] if img.ndim == 2 else img
 
-    hists = []
-    # A grid x grid split keeps where each colour is; grid=1 is the whole image.
-    # Normalisation above is global, so every block gets the same correction.
-    for rows in np.array_split(img, grid, axis=0):
-        for block in np.array_split(rows, grid, axis=1):
-            block = np.ascontiguousarray(block)
-            for c, upper in enumerate(uppers):
-                hist = cv2.calcHist([block], [c], None, [bins], [0, upper]).ravel().astype(np.float64)
-                # Divide by the pixel count so the descriptor does not depend on image size.
-                hists.append(hist / hist.sum())
-    # Divide by the number of histograms (blocks x channels) so the whole descriptor sums to 1,
-    # as the histogram measures (intersection, Hellinger, chi2) assume.
-    return np.concatenate(hists) / len(hists)
+def histogram_descriptor(img, color_space, bins, grid=1, joint=1, level_weights=None, cache=None):
+    """Colour histogram descriptor (sums to 1) of an image already converted with convert_image.
 
-def compute_descriptors(folder, color_space, bins, normalize=False, grid=1):
+    grid: an int G splits the image into G x G blocks (1 = the whole image); a tuple such
+        as (1, 2, 4) is a spatial pyramid: the descriptors of those levels, concatenated.
+    joint: 1 = one 1D histogram per channel, 2 = one 2D histogram per pair of channels,
+        3 = a single 3D histogram of the three channels together.
+    level_weights: weight of each pyramid level (default: all levels count the same).
+    cache: optional dict shared between calls on the same image, so a level that appears in
+        several settings (for example 2x2 blocks and a pyramid) is computed only once.
+    """
+    uppers = COLOR_SPACES[color_space][1]
+    levels = (int(grid),) if np.ndim(grid) == 0 else tuple(int(g) for g in grid)
+    weights = np.ones(len(levels)) if level_weights is None else np.asarray(level_weights, dtype=np.float64)
+    if len(weights) != len(levels) or min(levels) < 1:
+        raise ValueError("grid sizes must be >= 1 and level_weights needs one weight per level")
+    weights = weights / weights.sum()
+    if cache is None:
+        cache = {}
+    for g in levels:
+        if (bins, joint, g) not in cache:
+            cache[(bins, joint, g)] = block_histograms(img, uppers, bins, g, joint)
+    return np.concatenate([w * cache[(bins, joint, g)] for w, g in zip(weights, levels)])
+
+def compute_histogram(img_bgr, color_space, bins, normalize=False, grid=1, joint=1, level_weights=None):
+    """Colour histogram descriptor of a BGR image (see histogram_descriptor for the options)."""
+    return histogram_descriptor(convert_image(img_bgr, color_space, normalize), color_space, bins, grid, joint, level_weights)
+
+def compute_descriptors(folder, color_space, bins, normalize=False, grid=1, joint=1, level_weights=None):
     """Descriptors (N, D) and integer IDs (N) of all .jpg images in a folder, in sorted order."""
     paths = list_images(folder)
-    descriptors = np.stack([compute_histogram(read_image(p), color_space, bins, normalize, grid) for p in paths])
+    descriptors = np.stack([compute_histogram(read_image(p), color_space, bins, normalize, grid, joint, level_weights) for p in paths])
     return descriptors, [image_id(p) for p in paths]
