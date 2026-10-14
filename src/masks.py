@@ -86,25 +86,43 @@ def largest_component(m):
     return (labels == 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
 
 
-def clean(mask, hull=False):
-    """Close gaps, fill holes, remove specks, keep the largest region (optionally its convex hull)."""
+def large_components(m, min_region):
+    """Every region with at least min_region times the area of the largest one.
+
+    Keeps paintings made of several panels (separated by strips of wall or by a frame of
+    the same colour as the wall), which largest_component would cut down to one panel.
+    """
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+    if n <= 1:
+        return m
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    return np.isin(labels, 1 + np.flatnonzero(areas >= min_region * areas.max())).astype(np.uint8)
+
+
+def clean(mask, hull=False, min_region=None):
+    """Close gaps, fill holes, remove specks, keep the largest region (optionally its convex hull).
+
+    With min_region (a fraction, e.g. 0.05) every region at least that fraction of the largest
+    one is kept instead of only the largest; the convex hull then covers all of them.
+    """
     size = max(3, int(round(0.015 * min(mask.shape))) | 1)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
     m = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
     m = fill_holes(m)
-    m = largest_component(cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel))
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel)
+    m = large_components(m, min_region) if min_region else largest_component(m)
     points = cv2.findNonZero(m)
     if hull and points is not None:
         m = cv2.fillConvexPoly(np.zeros_like(m), cv2.convexHull(points), 1)
     return m
 
 
-def segment(img_bgr, method, border=0.04, hull=False):
-    """Foreground mask (bool, same size as the image)."""
+def segment(img_bgr, method, border=0.04, hull=False, min_region=None):
+    """Foreground mask (bool, same size as the image). min_region: see clean (None = largest region only)."""
     h, w = img_bgr.shape[:2]
     scale = WORK_SIZE / max(h, w)
     small = cv2.resize(img_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else img_bgr
-    mask = clean(METHODS[method](small, border), hull)
+    mask = clean(METHODS[method](small, border), hull, min_region)
     return cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
 
 

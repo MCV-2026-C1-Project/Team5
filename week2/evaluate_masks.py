@@ -68,6 +68,9 @@ def main():
     parser.add_argument("--data", default="data", help="folder containing the query sets")
     parser.add_argument("--query-set", default="qsd2_w1", help="folder with NNNNN.jpg images and NNNNN.png masks")
     parser.add_argument("--border", type=float, default=0.04, help="width of the border strips, as a fraction of the shorter side")
+    parser.add_argument("--min-region", type=float, default=None,
+                        help="also evaluate every variant keeping all regions with at least this fraction of the "
+                             "largest region's area (e.g. 0.05), named '+regions'; default: largest region only")
     parser.add_argument("--top", type=int, default=3, help="visual results for the best N variants")
     parser.add_argument("--output-dir", default=os.path.join("outputs", "week2"))
     args = parser.parse_args()
@@ -81,22 +84,25 @@ def main():
         gts.append(gt if gt.shape == img.shape[:2] else cv2.resize(gt.astype(np.uint8), img.shape[1::-1], interpolation=cv2.INTER_NEAREST).astype(bool))
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Every method, without and with the convex hull of its largest region.
+    # Every method, without and with the convex hull of its largest region
+    # (and, with --min-region, the same keeping every large region).
     preds, scores = {}, {}
+    region_options = [None] + ([args.min_region] if args.min_region else [])
     for method in METHODS:
-        for hull in (False, True):
-            name = method + ("+hull" if hull else "")
-            preds[name] = [segment(img, method, args.border, hull) for img in images]
-            scores[name] = np.array([mask_scores(p, g) for p, g in zip(preds[name], gts)])
-            print(f"done {name}", flush=True)
+        for min_region in region_options:
+            for hull in (False, True):
+                name = method + ("+regions" if min_region else "") + ("+hull" if hull else "")
+                preds[name] = [segment(img, method, args.border, hull, min_region) for img in images]
+                scores[name] = np.array([mask_scores(p, g) for p, g in zip(preds[name], gts)])
+                print(f"done {name}", flush=True)
     scores = {n: scores[n] for n in sorted(scores, key=lambda n: -scores[n][:, 2].mean())}   # best F1 first
 
     lines = [f"{args.query_set}: {len(paths)} images, border strips {args.border:.0%}",
-             f"{'variant':<22} {'precision':>9} {'recall':>7} {'F1':>7} {'worst F1':>9}  worst image"]
+             f"{'variant':<26} {'precision':>9} {'recall':>7} {'F1':>7} {'worst F1':>9}  worst image"]
     for name, s in scores.items():
-        lines.append(f"{name:<22} {s[:, 0].mean():>9.4f} {s[:, 1].mean():>7.4f} {s[:, 2].mean():>7.4f} {s[:, 2].min():>9.4f}  #{s[:, 2].argmin()}")
-    lines += ["", "F1 per image:", f"{'image':<6}" + "".join(f"{n:>22}" for n in scores)]
-    lines += [f"{i:<6}" + "".join(f"{s[i, 2]:>22.4f}" for s in scores.values()) for i in range(len(paths))]
+        lines.append(f"{name:<26} {s[:, 0].mean():>9.4f} {s[:, 1].mean():>7.4f} {s[:, 2].mean():>7.4f} {s[:, 2].min():>9.4f}  #{s[:, 2].argmin()}")
+    lines += ["", "F1 per image:", f"{'image':<6}" + "".join(f"{n:>26}" for n in scores)]
+    lines += [f"{i:<6}" + "".join(f"{s[i, 2]:>26.4f}" for s in scores.values()) for i in range(len(paths))]
     text = "\n".join(lines)
     print("\n" + text)
     with open(os.path.join(args.output_dir, "mask_results.txt"), "w") as f:
