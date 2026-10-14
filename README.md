@@ -184,6 +184,7 @@ precision, recall and F1 (per image, then averaged over the 30 images).
 ```bash
 python week2/evaluate_masks.py --data data --query-set qsd2_w1
 python week2/evaluate_masks.py --data data --query-set qsd2_w1 --top 6 --border 0.04
+python week2/evaluate_masks.py --data data --query-set qsd2_w1 --min-region 0.05
 ```
 
 Three methods are compared, all followed by the same clean-up (close small gaps, fill
@@ -201,8 +202,16 @@ Each one is also run with the convex hull of the largest region (`+hull`), compu
 the mask pixels with `cv2.convexHull`; it is shape post-processing of the colour mask, not
 a contour detector.
 
+With `--min-region F` every variant is also run keeping every region with at least F times
+the area of the largest one, instead of only the largest (`+regions`). This keeps paintings
+made of several panels, or whose frame has the colour of the wall, which the colour model
+splits into separate regions. Without the option the script behaves as before. Results with
+`--min-region 0.05` (0.10 and 0.20 give almost the same):
+
 | Variant | Precision | Recall | F1 |
 |---|---|---|---|
+| border_otsu+regions+hull | 0.9677 | 0.9477 | 0.9431 |
+| border_otsu+regions | 0.9765 | 0.9168 | 0.9291 |
 | border_otsu+hull | 0.9677 | 0.9153 | 0.9181 |
 | border_otsu | 0.9765 | 0.8948 | 0.9084 |
 | kmeans+hull | 0.8753 | 0.9203 | 0.8852 |
@@ -210,8 +219,13 @@ a contour detector.
 | kmeans | 0.8993 | 0.8658 | 0.8699 |
 | gray_otsu | 0.8666 | 0.8494 | 0.8491 |
 
-With `border_otsu`, 3 images are below 0.8 (13, 17 and 20); the rest are above 0.9. Image 17
-fails with every method. A background model that changes smoothly across the image and a
+With `border_otsu`, 3 images are below 0.8 (13, 17 and 20); the rest are above 0.87. Images 13
+and 17 fail because only the largest region is kept: 13 is split into panels by a frame of the
+same colour as the wall, and 17 is four panels separated by strips of wall. With
+`border_otsu+regions+hull` they go to 0.88 and 0.98 and only image 20 stays below 0.8 (0.14):
+the painting is white and grey like the wall, so colour alone cannot separate them. Whether
+the convex hull counts as "only colour" should be checked; without it the best variant is
+`border_otsu+regions` (F1 0.929). A background model that changes smoothly across the image and a
 rule that treats darker versions of the wall colour as shadow were also tried and gave no
 improvement, so they were removed. The script writes `outputs/week2/mask_results.txt` (F1 of
 every image), `mask_metrics.png` and one `masks_<variant>.png` for each of the best variants,
