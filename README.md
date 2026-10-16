@@ -157,10 +157,16 @@ per method; each image is read and converted once.
 ```bash
 python week2/evaluate_descriptors.py --data data --query-set qsd1_w2
 python week2/evaluate_descriptors.py --data data --query-set qsd1_w2 --all-measures --workers 2
+
+# Only the best setting of each method (the "Best settings" column below), next to its baseline
+python week2/evaluate_descriptors.py --data data --query-set qsd1_w2 --color-space ycrcb --bins 32 --grid 1 2 4 --joint 1 --measure chi2
+python week2/evaluate_descriptors.py --data data --query-set qsd1_w2 --color-space lab --bins 64 --grid 1 2 4 --joint 1 --measure l1
 ```
 
 `--all-measures` also tries L1, chi-squared, Hellinger and Jensen-Shannon on every setting;
-`--workers` is the number of images processed in parallel. The output is
+`--workers` is the number of images processed in parallel. `--color-space`, `--bins`, `--grid`
+(one value for blocks, several for a pyramid), `--joint` and `--measure` restrict the search to the
+matching settings; the result is only printed, so the files of the full search are kept. The output is
 `outputs/week2/descriptor_search.txt` (every setting, sorted by mAP@5, with the change
 against the baseline) and `outputs/week2/descriptor_comparison.png`.
 
@@ -168,8 +174,8 @@ Results on qsd1_w2 (the same queries as qsd1_w1), one query is 0.033 of mAP@1:
 
 | | Baseline (1D, whole image, 64 bins) | Best settings |
 |---|---|---|
-| Method 1 (Lab, L1) | 0.9333 / 0.9333 | 0.9667 / 0.9667 with 2x2, 3x3 or 4x4 blocks, or the pyramids (1,2), (1,2,3), (1,2,4) |
-| Method 2 (YCrCb, chi-squared) | 0.9000 / 0.9278 | 0.9667 / 0.9750 with 2x2 blocks and 64 bins; 0.9667 / 0.9667 for the others |
+| Method 1 (Lab, L1) | 0.9333 / 0.9333 | 0.9667 / 0.9667 with the 1D pyramid (1,2,4) and 64 bins |
+| Method 2 (YCrCb, chi-squared) | 0.9000 / 0.9278 | 0.9667 / 0.9667 with the 1D pyramid (1,2,4) and 32 bins |
 
 The baselines are the Week 1 numbers. In both methods blocks and pyramids add one or two
 correct queries and many settings reach the same score, so the gain comes from keeping the

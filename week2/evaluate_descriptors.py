@@ -97,23 +97,42 @@ def main():
     parser.add_argument("--workers", type=int, default=4, help="images processed in parallel (1 = no parallelism)")
     parser.add_argument("--top", type=int, default=15, help="rows of the table to print per method")
     parser.add_argument("--output-dir", default=os.path.join("outputs", "week2"))
+    # Optional filters to evaluate a single setting (e.g. the best one) instead of all of them.
+    parser.add_argument("--color-space", choices=[cs for _, cs, _ in METHODS], help="only this method (lab = Method 1, ycrcb = Method 2)")
+    parser.add_argument("--bins", type=int, help="only settings with this number of bins")
+    parser.add_argument("--grid", type=int, nargs="+", help="only this grid (e.g. 2) or unweighted pyramid (e.g. 1 2 4)")
+    parser.add_argument("--joint", type=int, choices=(1, 2, 3), help="only 1D (1), 2D (2) or 3D (3) histograms")
+    parser.add_argument("--measure", choices=EXTRA_MEASURES, help="only this distance (default: each method's own)")
     args = parser.parse_args()
+
+    grid_filter = None if args.grid is None else (args.grid[0] if len(args.grid) == 1 else tuple(args.grid))
+    filtered = any(v is not None for v in (args.color_space, args.bins, args.grid, args.joint, args.measure))
+
+    def wanted(cfg):
+        _, bins, joint, grid, weights = cfg
+        return ((args.bins is None or bins == args.bins) and (args.joint is None or joint == args.joint)
+                and (grid_filter is None or (grid == grid_filter and weights is None)))
 
     query_dir = os.path.join(args.data, args.query_set)
     with open(os.path.join(query_dir, "gt_corresps.pkl"), "rb") as f:
         gt = pickle.load(f)
     db_paths, query_paths = list_images(os.path.join(args.data, "BBDD")), list_images(query_dir)
     db_ids = [image_id(p) for p in db_paths]
-    cfgs = settings()
+    # The baseline is always evaluated: the table is relative to it.
+    cfgs = [c for c in settings() if wanted(c) or (c[0], c[1]) == BASELINE]
+    methods = [m for m in METHODS if args.color_space in (None, m[1])]
     os.makedirs(args.output_dir, exist_ok=True)
 
     results = []
-    for method, color_space, own_measure in METHODS:
+    for method, color_space, own_measure in methods:
         print(f"{method}: {color_space}, normalised, {len(cfgs)} histogram settings", flush=True)
         db_desc = describe_folder(db_paths, color_space, cfgs, args.workers)
         query_desc = describe_folder(query_paths, color_space, cfgs, args.workers)
         for (name, bins, joint, grid, weights), d_db, d_q in zip(cfgs, db_desc, query_desc):
-            for measure in (EXTRA_MEASURES if args.all_measures else [own_measure]):
+            measures = [args.measure] if args.measure else (EXTRA_MEASURES if args.all_measures else [own_measure])
+            if (name, bins) == BASELINE and own_measure not in measures:
+                measures = measures + [own_measure]
+            for measure in measures:
                 predicted = retrieve(d_q, d_db, db_ids, measure, k=5)
                 results.append(dict(method=method, name=name, bins=bins, measure=measure, dims=d_db.shape[1],
                                     m1=mapk(gt, predicted, 1), m5=mapk(gt, predicted, 5)))
@@ -122,7 +141,7 @@ def main():
     header = [f"{args.query_set}: {n} queries (1 query = {1 / n:.4f} mAP@1). Baseline = Week 1 simple histogram, {BASELINE[1]} bins.",
               "'vs base' = change in correct answers at rank 1 (in queries) and in mAP@5, relative to the baseline."]
     full, short = list(header), list(header)
-    for method, color_space, own_measure in METHODS:
+    for method, color_space, own_measure in methods:
         rows = [r for r in results if r["method"] == method]
         base = next(r for r in rows if (r["name"], r["bins"]) == BASELINE and r["measure"] == own_measure)
         better = sum(r["m1"] >= base["m1"] and r["m5"] >= base["m5"] and (r["m1"], r["m5"]) != (base["m1"], base["m5"]) for r in rows)
@@ -135,6 +154,9 @@ def main():
         full += ["", title, columns] + table
         short += ["", title, columns] + table[:args.top]
 
+    if filtered:   # a single setting: print it, keep the files of the full search
+        print("\n" + "\n".join(short))
+        return
     with open(os.path.join(args.output_dir, "descriptor_search.txt"), "w") as f:
         f.write("\n".join(full) + "\n")
     plot_comparison(results, n, os.path.join(args.output_dir, "descriptor_comparison.png"))
