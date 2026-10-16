@@ -10,7 +10,7 @@ queries can also be removed using only colour.
 ```
 src/        shared code: descriptors, distances, retrieval, evaluation, masks
 week1/      week 1 scripts (evaluation, submission, error analysis)
-week2/      week 2 scripts (descriptor search, background removal)
+week2/      week 2 scripts (descriptor search, background removal, retrieval with masks)
 data/       datasets (not committed)
 outputs/    results (not committed)
 ```
@@ -65,6 +65,11 @@ sums to 1 and does not depend on the image size. Three options change the struct
   computes one 2D histogram for each pair of channels and `joint=3` one 3D histogram of the
   three channels together. They know which values occur together, but have bins^2 and bins^3
   values, so they need few bins.
+
+**Mask (`mask=`).** The descriptor functions accept an optional mask (uint8, non-zero = painting):
+only the masked pixels are counted in the histograms, and the normalisation uses their mean and
+standard deviation. A block without masked pixels gives a histogram of zeros. Without a mask nothing
+changes.
 
 **Normalisation (`normalize`, Lab and YCrCb only).** The queries are the paintings
 with a global change of brightness and colour. Before the histogram, each image is
@@ -237,7 +242,37 @@ improvement, so they were removed. The script writes `outputs/week2/mask_results
 every image), `mask_metrics.png` and one `masks_<variant>.png` for each of the best variants,
 where green is correct foreground, red false positive and blue missed foreground.
 
+### Task 5: retrieval on the queries with background
+
+`week2/evaluate_retrieval_masks.py` describes each query of `qsd2_w1` using only the pixels of its
+mask: the query is cropped to the bounding box of the mask, the normalisation and the histograms use
+the masked pixels only, and the museum images are described as usual. It assumes one painting per
+query, as in `qsd2_w1`. Three descriptors are compared (all normalised, 1D histograms): M1 is YCrCb,
+pyramid (1,2,4), 32 bins, chi-squared; M2 is Lab, pyramid (1,2,4), 64 bins, L1; M3 is Lab, 2x2 blocks,
+64 bins, L1 (Week 1 method 1). Two references are included: the whole photo, without removing the
+background, and the annotated mask.
+
+```bash
+python week2/evaluate_retrieval_masks.py --data data --query-set qsd2_w1
+python week2/evaluate_retrieval_masks.py --data data --query-set qsd2_w1 --methods border_otsu
+```
+
+`--methods` selects the mask methods to try (default: all) and `--min-region` is the fraction used by
+the `+regions` variants. The output is `outputs/week2/retrieval_masks.txt`, with the table and the rank
+of the correct painting of every query. mAP@1 / mAP@5 on qsd2_w1 (one query is 0.033 of mAP@1):
+
+| Masks | Mask F1 | M1 | M2 | M3 |
+|---|---|---|---|---|
+| Whole photo (reference) | 0.7021 | 0.1667 / 0.1667 | 0.2333 / 0.2417 | 0.1667 / 0.1928 |
+| Annotated mask (reference) | 1.0000 | 0.9000 / 0.9194 | 0.8333 / 0.8611 | 0.8333 / 0.8567 |
+| border_otsu | 0.9084 | 0.7667 / 0.7833 | 0.7333 / 0.7556 | 0.6667 / 0.7000 |
+| border_otsu+hull | 0.9181 | 0.8000 / 0.8167 | 0.7667 / 0.7944 | 0.7000 / 0.7483 |
+| border_otsu+regions | 0.9291 | 0.8000 / 0.8167 | 0.7667 / 0.7778 | 0.7000 / 0.7333 |
+| border_otsu+regions+hull | 0.9431 | 0.8333 / 0.8500 | 0.7667 / 0.7944 | 0.7000 / 0.7483 |
+
+The best `gray_otsu` and `kmeans` variants score lower than the best `border_otsu` variant with the
+three descriptors.
+
 ### Still to do
 
-Retrieval on the queries with background (Task 5) and the blind submissions for QST1 and QST2
-(Task 6).
+The blind submissions for QST1 and QST2 (Task 6).

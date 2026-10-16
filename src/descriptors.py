@@ -57,8 +57,11 @@ def to_float_space(img_bgr, color_space):
         return img * np.float32([255 / 100, 1, 1]) + np.float32([0, 128, 128])
     return img * 255
 
-def normalize_shift(img):
+def normalize_shift(img, mask=None):
     """Lab or YCrCb image (float32) with the global brightness and colour change removed.
+
+    With a mask (uint8, non-zero = painting) the mean and standard deviation are measured on
+    the masked pixels only, so a wall around the painting does not change them.
 
     Every channel is moved to a fixed mean, and all three are stretched by the factor that
     brings the brightness (channel 0) to a fixed standard deviation. Less light shrinks
@@ -67,7 +70,7 @@ def normalize_shift(img):
     darker, lighter or tinted maps back close to the original painting.
     """
     # meanStdDev works in float64; a float32 mean over millions of pixels is not accurate enough.
-    mean, std = (v.ravel() for v in cv2.meanStdDev(img))
+    mean, std = (v.ravel() for v in cv2.meanStdDev(img, mask=mask))
     scale = np.full(3, NORM_STD / max(std[0], 1e-6))
     img = (img.astype(np.float32) - mean.astype(np.float32)) * scale.astype(np.float32) + NORM_MEAN
     # calcHist ignores values outside the range, so clip them into the first and last bin.
@@ -79,33 +82,45 @@ def channel_groups(n_channels, joint):
         raise ValueError(f"joint={joint} needs a colour space with at least {joint} channels")
     return [(0, 1, 2)] if joint == 3 else list(itertools.combinations(range(n_channels), joint))
 
-def block_histograms(img, uppers, bins, grid, joint):
-    """Histograms of every block of a grid x grid split, concatenated; the result sums to 1."""
+def split_blocks(a, grid):
+    """The blocks of an array split in a grid x grid layout, row by row."""
+    return [np.ascontiguousarray(block) for rows in np.array_split(a, grid, axis=0) for block in np.array_split(rows, grid, axis=1)]
+
+def block_histograms(img, uppers, bins, grid, joint, mask=None):
+    """Histograms of every block of a grid x grid split, concatenated; the result sums to 1.
+
+    With a mask (uint8, non-zero = painting) only the masked pixels are counted. A block
+    without masked pixels gives a histogram of zeros.
+    """
+    blocks = split_blocks(img, grid)
+    masks = [None] * len(blocks) if mask is None else split_blocks(mask, grid)
     hists = []
-    for rows in np.array_split(img, grid, axis=0):
-        for block in np.array_split(rows, grid, axis=1):
-            block = np.ascontiguousarray(block)
-            for channels in channel_groups(len(uppers), joint):
-                ranges = [edge for c in channels for edge in (0, uppers[c])]
-                hist = cv2.calcHist([block], list(channels), None, [bins] * len(channels), ranges)
-                hist = hist.ravel().astype(np.float64)
-                hists.append(hist / hist.sum())
+    for block, block_mask in zip(blocks, masks):
+        for channels in channel_groups(len(uppers), joint):
+            ranges = [edge for c in channels for edge in (0, uppers[c])]
+            hist = cv2.calcHist([block], list(channels), block_mask, [bins] * len(channels), ranges)
+            hist = hist.ravel().astype(np.float64)
+            total = hist.sum()
+            hists.append(hist / total if total > 0 else hist)
     # Divide by the number of histograms so the whole descriptor sums to 1.
     return np.concatenate(hists) / len(hists)
 
-def convert_image(img_bgr, color_space, normalize=False):
-    """BGR image in the chosen colour space (optionally normalised), shape (H, W, channels)."""
+def convert_image(img_bgr, color_space, normalize=False, mask=None):
+    """BGR image in the chosen colour space (optionally normalised), shape (H, W, channels).
+
+    mask: optional uint8 mask; the normalisation then uses the masked pixels only.
+    """
     if color_space not in COLOR_SPACES:
         raise ValueError(f"Unknown colour space '{color_space}', choose from {list(COLOR_SPACES)}")
     if normalize:
         if color_space not in NORMALIZABLE:
             raise ValueError(f"normalize is only defined for {NORMALIZABLE}, not '{color_space}'")
-        img = normalize_shift(to_float_space(img_bgr, color_space))
+        img = normalize_shift(to_float_space(img_bgr, color_space), mask)
     else:
         img = cv2.cvtColor(img_bgr, COLOR_SPACES[color_space][0])
     return img[:, :, None] if img.ndim == 2 else img
 
-def histogram_descriptor(img, color_space, bins, grid=1, joint=1, level_weights=None, cache=None):
+def histogram_descriptor(img, color_space, bins, grid=1, joint=1, level_weights=None, cache=None, mask=None):
     """Colour histogram descriptor (sums to 1) of an image already converted with convert_image.
 
     grid: an int G splits the image into G x G blocks (1 = the whole image); a tuple such
@@ -115,6 +130,7 @@ def histogram_descriptor(img, color_space, bins, grid=1, joint=1, level_weights=
     level_weights: weight of each pyramid level (default: all levels count the same).
     cache: optional dict shared between calls on the same image, so a level that appears in
         several settings (for example 2x2 blocks and a pyramid) is computed only once.
+    mask: optional uint8 mask (same size as img, non-zero = painting): only those pixels are counted.
     """
     uppers = COLOR_SPACES[color_space][1]
     levels = (int(grid),) if np.ndim(grid) == 0 else tuple(int(g) for g in grid)
@@ -126,12 +142,12 @@ def histogram_descriptor(img, color_space, bins, grid=1, joint=1, level_weights=
         cache = {}
     for g in levels:
         if (bins, joint, g) not in cache:
-            cache[(bins, joint, g)] = block_histograms(img, uppers, bins, g, joint)
+            cache[(bins, joint, g)] = block_histograms(img, uppers, bins, g, joint, mask)
     return np.concatenate([w * cache[(bins, joint, g)] for w, g in zip(weights, levels)])
 
-def compute_histogram(img_bgr, color_space, bins, normalize=False, grid=1, joint=1, level_weights=None):
+def compute_histogram(img_bgr, color_space, bins, normalize=False, grid=1, joint=1, level_weights=None, mask=None):
     """Colour histogram descriptor of a BGR image (see histogram_descriptor for the options)."""
-    return histogram_descriptor(convert_image(img_bgr, color_space, normalize), color_space, bins, grid, joint, level_weights)
+    return histogram_descriptor(convert_image(img_bgr, color_space, normalize, mask), color_space, bins, grid, joint, level_weights, mask=mask)
 
 def compute_descriptors(folder, color_space, bins, normalize=False, grid=1, joint=1, level_weights=None):
     """Descriptors (N, D) and integer IDs (N) of all .jpg images in a folder, in sorted order."""
