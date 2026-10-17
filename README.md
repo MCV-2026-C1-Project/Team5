@@ -273,6 +273,34 @@ of the correct painting of every query. mAP@1 / mAP@5 on qsd2_w1 (one query is 0
 The best `gray_otsu` and `kmeans` variants score lower than the best `border_otsu` variant with the
 three descriptors.
 
-### Still to do
+### Task 6: blind competition submissions (QST1 and QST2)
 
-The blind submissions for QST1 and QST2 (Task 6).
+`week2/make_submission.py` generates the submission files for the blind competition sets
+`qst1_w2` and `qst2_w2` according to the required directory structure and format:
+
+- For each test query in `qst1_w2` and `qst2_w2`, returns a pickled list of lists containing
+  the top-10 best matching BBDD IDs (`result.pkl`).
+- For `qst2_w2`, saves the predicted binary foreground masks as `.png` files (e.g. `00000.png` ... `00029.png`).
+- Output follows the required GDrive layout:
+  `outputs/Team5/week2/QST1/method1/result.pkl`
+  `outputs/Team5/week2/QST1/method2/result.pkl`
+  `outputs/Team5/week2/QST2/method1/result.pkl`
+  `outputs/Team5/week2/QST2/method1/*.png`
+  `outputs/Team5/week2/QST2/method2/result.pkl`
+  `outputs/Team5/week2/QST2/method2/*.png`
+
+```bash
+# QST1 (no background)
+# Method 1: YCrCb, pyramid (1,2,4), 32 bins, chi-squared
+python week2/make_submission.py --data data --query-set qst1_w2 --color-space ycrcb --bins 32 --grid 1 2 4 --normalize --measure chi2 --output outputs/Team5/week2/QST1/method1/result.pkl
+
+# Method 2: Lab, pyramid (1,2,4), 64 bins, L1
+python week2/make_submission.py --data data --query-set qst1_w2 --color-space lab --bins 64 --grid 1 2 4 --normalize --measure l1 --output outputs/Team5/week2/QST1/method2/result.pkl
+
+# QST2 (with background - saves result.pkl and the .png masks)
+# Method 1: YCrCb, pyramid (1,2,4), 32 bins, chi-squared; border_otsu + regions + hull
+python week2/make_submission.py --data data --query-set qst2_w2 --color-space ycrcb --bins 32 --grid 1 2 4 --normalize --measure chi2 --mask border_otsu --min-region 0.05 --hull --output outputs/Team5/week2/QST2/method1/result.pkl
+
+# Method 2: Lab, pyramid (1,2,4), 64 bins, L1; border_otsu + regions + hull
+python week2/make_submission.py --data data --query-set qst2_w2 --color-space lab --bins 64 --grid 1 2 4 --normalize --measure l1 --mask border_otsu --min-region 0.05 --hull --output outputs/Team5/week2/QST2/method2/result.pkl
+```
