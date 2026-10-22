@@ -39,7 +39,8 @@ def jensen_shannon(q, db):
 
 def cosine_similarity(q, db):
     """Cosine similarity (similarity, 1 for identical histograms)."""
-    return np.sum(q * db, axis=1) / (np.linalg.norm(q) * np.linalg.norm(db, axis=1))
+    # The floor avoids 0/0 for an all-zero descriptor (e.g. the DCT of a flat image), which then scores 0.
+    return np.sum(q * db, axis=1) / np.maximum(np.linalg.norm(q) * np.linalg.norm(db, axis=1), 1e-12)
 
 # name -> (function, is_similarity)
 MEASURES = {

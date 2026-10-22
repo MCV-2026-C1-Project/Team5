@@ -1,6 +1,8 @@
-"""Task 3: mean Average Precision at K."""
+"""Evaluation: mean Average Precision at K (retrieval) and SSIM (image quality)."""
 
 from typing import NamedTuple
+
+import cv2
 import numpy as np
 
 
@@ -63,3 +65,19 @@ def bootstrap_mapk(actual, predicted, k, n_bootstraps=1000, ci=0.95, seed=None):
         ci_upper=ci_upper,
         std_err=std_err,
     )
+
+
+def ssim(a, b):
+    """Structural similarity of two images of the same size (1 = identical), averaged over pixels and channels."""
+    a, b = a.astype(np.float64), b.astype(np.float64)
+    c1, c2 = (0.01 * 255) ** 2, (0.03 * 255) ** 2
+
+    def local_mean(x):
+        return cv2.GaussianBlur(x, (11, 11), 1.5)
+
+    mu_a, mu_b = local_mean(a), local_mean(b)
+    var_a = local_mean(a * a) - mu_a ** 2
+    var_b = local_mean(b * b) - mu_b ** 2
+    cov = local_mean(a * b) - mu_a * mu_b
+    ssim_map = ((2 * mu_a * mu_b + c1) * (2 * cov + c2)) / ((mu_a ** 2 + mu_b ** 2 + c1) * (var_a + var_b + c2))
+    return float(ssim_map.mean())

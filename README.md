@@ -8,9 +8,10 @@ queries can also be removed using only colour.
 ## Structure
 
 ```
-src/        shared code: descriptors, distances, retrieval, evaluation, masks
+src/        shared code: descriptors, distances, retrieval, evaluation, masks, denoising, texture
 week1/      week 1 scripts (evaluation, submission, error analysis)
 week2/      week 2 scripts (descriptor search, background removal, retrieval with masks)
+week3/      week 3 scripts (noise detector calibration, noise filtering, texture descriptors)
 data/       datasets (not committed)
 outputs/    results (not committed)
 ```
@@ -40,8 +41,11 @@ data/
 ├── qsd1_w1/     00000.jpg ... 00029.jpg, gt_corresps.pkl
 ├── qst1_w1/     00000.jpg ...            (test set, no ground truth)
 ├── qsd1_w2/     00000.jpg ... 00029.jpg, gt_corresps.pkl
-└── qsd2_w1/     00000.jpg ... 00029.jpg with a mask 00000.png ... (the painting is white),
-                 frames.pkl, gt_corresps.pkl
+├── qsd2_w1/     00000.jpg ... 00029.jpg with a mask 00000.png ... (the painting is white),
+│                frames.pkl, gt_corresps.pkl
+├── qsd1_w3/     00000.jpg ... 00029.jpg, gt_corresps.pkl, augmentations.pkl (what was done to
+│                each query: impulse noise, hue change or nothing), non_augmented/ (clean versions)
+└── qsd2_w3/     same, with background and up to two paintings per image
 ```
 
 Only the `.jpg` files of BBDD are used. In `qsd2_w1` the `.png` files are the
@@ -304,3 +308,115 @@ python week2/make_submission.py --data data --query-set qst2_w2 --color-space yc
 # Method 2: Lab, pyramid (1,2,4), 64 bins, L1; border_otsu + regions + hull
 python week2/make_submission.py --data data --query-set qst2_w2 --color-space lab --bins 64 --grid 1 2 4 --normalize --measure l1 --mask border_otsu --min-region 0.05 --hull --output outputs/Team5/week2/QST2/method2/result.pkl
 ```
+## Week 3
+
+### Task 1: noise filtering
+
+`src/denoise.py` has the filters and a noise detector; `week3/evaluate_denoising.py` evaluates them on
+`qsd1_w3`, using the clean version of every query (`non_augmented/`) and the annotation of what was done
+to it (`augmentations.pkl`).
+
+```bash
+# Choose the thresholds of the noise detector on the clean museum images, test them on the queries
+python week3/calibrate_noise_detector.py --data data
+# Compare the filters
+python week3/evaluate_denoising.py --data data --query-set qsd1_w3
+```
+
+**The noise.** 7 of the 30 queries have impulse noise: about 1.5-2.7% of the pixels are replaced by
+random colours (14 others have a hue change, 9 are untouched). The noise model is not given, so it was
+measured against the clean versions.
+
+**Detecting it.** Only some images are noisy, and filtering a clean image only blurs it, so a filter is
+applied only when noise is detected. An impulse differs from all of its 8 neighbours, while a pixel on an
+edge or in a texture is always close to some of them. A pixel is an impulse if its smallest difference
+to its neighbours is above `DETECT_DIFF` in some channel, and the image is noisy if more than
+`NOISY_RATIO` of its pixels are impulses. A plain "far from the local median" test does not work: the
+edges and textures of clean photos score as high as the noise.
+
+**Choosing the thresholds without the query annotations.** `week3/calibrate_noise_detector.py` uses only
+the 287 museum images, which are clean (`outputs/week3/noise_calibration.txt`):
+
+- `DETECT_DIFF` is the smallest of 30, 40, ..., 80 at which 99% of the clean images have fewer than 1
+  impulse per 10,000 pixels, so an "impulse" is something that almost never happens in a clean painting: **70**.
+- `NOISY_RATIO` is twice the largest impulse ratio of any clean image: **0.00018** (0.018%).
+
+The query sets were not used to choose anything, so they are a real test: the detector finds exactly the
+noisy images in both, with no false alarms and none missed.
+
+| Query set | Correct | Impulse ratio, noisy images | Impulse ratio, the others |
+|---|---|---|---|
+| qsd1_w3 (7 noisy) | 30/30 | 0.34-1.11% | 0.00% |
+| qsd2_w3 (9 noisy) | 30/30 | 0.27-0.76% | 0.00-0.01% |
+
+**The filters**. 
+
+| Filter | Noisy queries vs clean version: PSNR / SSIM | Other queries vs themselves, if filtered anyway: PSNR / SSIM |
+|---|---|---|
+| no filter | 23.73 / 0.488 | - / 1.000 |
+| gaussian 3x3 (linear) | 29.12 / 0.740 | 35.05 / 0.955 |
+| **median 3x3** | **30.78 / 0.797** | **36.09** / 0.946 |
+| median 5x5 | 30.27 / 0.771 | 31.47 / 0.864 |
+| bilateral | 26.37 / 0.653 | 34.22 / 0.897 |
+| non-local means | 27.16 / 0.710 | 32.97 / 0.882 |
+
+The first column is how well the noise is removed; the second is how much a clean query would be damaged
+if it were filtered by mistake.
+
+**Size of the median filter** (also in `denoise_results.txt`):
+
+| Size | 3x3 | 5x5 | 7x7 | 9x9 | 11x11 | 13x13 | 15x15 |
+|---|---|---|---|---|---|---|---|
+| Noisy queries vs clean: PSNR | **30.78** | 30.27 | 29.42 | 28.72 | 28.11 | 27.54 | 27.03 |
+| Noisy queries vs clean: SSIM | **0.797** | 0.771 | 0.732 | 0.705 | 0.685 | 0.671 | 0.659 |
+| Other queries vs themselves: PSNR | **36.09** | 31.47 | 28.99 | 27.36 | 26.22 | 25.49 | 24.94 |
+| Other queries vs themselves: SSIM | **0.946** | 0.864 | 0.796 | 0.748 | 0.716 | 0.697 | 0.684 |
+
+3x3 already removes the impulses, which are isolated pixels, so a larger window removes no more noise and
+only blurs the painting: both metrics fall steadily with the size, on the noisy queries and on the clean
+ones. From 7x7 on, a filtered clean query is further from itself than a filtered noisy query is from its
+clean version.
+
+**Also tried: a switching median**, which replaces only the pixels detected as noise and leaves the rest
+untouched, to keep the texture of the painting. It is worse than the plain median whatever the rule
+(pixels far from all their neighbours, or far from their local median, with or without a 1-pixel ring
+around them): the quality keeps rising the more pixels are replaced, up to replacing all of them, which
+is the plain median (30.78 dB / 0.797). The JPEG compression has spread the noise over the whole image,
+not only over the impulse pixels, so it was not kept.
+
+### Task 2: texture descriptors
+
+`src/texture.py` has the descriptors; `week3/evaluate_texture.py` retrieves on `qsd1_w3` with texture
+descriptors only, on the queries as given, filtered with each filter of Task 1 (only the ones detected as
+noisy: the whole Task 1 + 2 pipeline) and on the clean originals (the upper bound).
+
+```bash
+python week3/evaluate_texture.py --data data --query-set qsd1_w3
+```
+
+All of them work on the grey-level image resized to 256 x 256, so a photo and the museum image are
+described at the same scale, and they ignore colour, so the hue changes of `qsd1_w3` do not affect them.
+As with the colour histograms, the image is split into blocks and the descriptors of the blocks are
+concatenated.
+
+- **LBP** (radius 1, 4x4 blocks): each of the 8 neighbours on a circle gives a bit (1 if at least as bright
+  as the centre), the 8 bits a code from 0 to 255; histogram of the codes per block (4,096 values).
+- **Multiscale LBP** (radii 1, 2 and 3, 4x4 blocks): the same on three circles, with bilinear
+  interpolation for the neighbours that do not fall on a pixel (12,288 values).
+- **DCT** (8x8 blocks, 10 coefficients): the first 10 coefficients in zigzag order (lowest frequencies) of
+  every block, without the DC coefficient (the mean brightness); unit length (640 values).
+- **Haar wavelet** (3 levels, 4x4 blocks): mean absolute value of the horizontal, vertical and diagonal
+  details at each level, per block (144 values).
+
+Best distance and filter of each descriptor (highest mAP@5, then mAP@1, on the 30 queries; every
+combination is in `outputs/week3/texture_results.txt`). "Noisy @1" is how many of the 7 noisy queries
+have the correct painting at rank 1:
+
+| Descriptor | Best distance | Best filter (on the queries detected as noisy) | mAP@1 | mAP@5 | Noisy @1 |
+|---|---|---|---|---|---|
+| LBP | L1 | bilateral | 0.867 | 0.919 | 7/7 |
+| Multiscale LBP | L1 | bilateral | 1.000 | 1.000 | 7/7 |
+| DCT | cosine (L1 equal) | Every filter gives the same | 0.967 | 0.983 | 7/7 |
+| Haar wavelet | L1 | median 3x3 | 0.967 | 0.967 | 6/7 |
+
+
