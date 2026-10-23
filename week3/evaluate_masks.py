@@ -18,14 +18,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from src.denoise import FILTERS, denoise
 from src.descriptors import list_images, read_image
+from src.watershed import watershed_masks
 from src.masks import mask_scores, segment_paintings
 from week2.evaluate_masks import plot_visual_results
 
-# Variants compared: (name, keyword arguments of segment_paintings). The first one is the Week 2 method.
+# Variants compared: (name, keyword arguments of segment_paintings, or a function of the image returning the
+# masks). The first one is the Week 2 method, the last one is shown per image.
 VARIANTS = [
     ("W2: border_otsu+hull", dict(method="border_otsu", bridge=0)),
     ("border_otsu_log", dict(hull=False)),
     ("border_otsu_log+hull", dict()),
+    ("watershed (otsu seeds)", watershed_masks),   # a function instead of keyword arguments
 ]
 
 
@@ -63,7 +66,7 @@ def main():
              f"{'variant':<24} {'precision':>9} {'recall':>7} {'F1':>7} {'worst F1':>9}  {'count right':>11}"]
     per_image = {}
     for name, kwargs in VARIANTS:
-        preds = [segment_paintings(img, **kwargs) for img in images]
+        preds = [kwargs(img) if callable(kwargs) else segment_paintings(img, **kwargs) for img in images]
         unions = [np.any(p, axis=0) if p else np.zeros(g.shape, bool) for p, g in zip(preds, gts)]
         s = np.array([mask_scores(u, g) for u, g in zip(unions, gts)])
         right = sum(len(p) == n for p, n in zip(preds, n_true))

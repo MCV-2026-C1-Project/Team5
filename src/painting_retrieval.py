@@ -12,6 +12,7 @@ import numpy as np
 from src.denoise import denoise
 from src.descriptors import compute_histogram, convert_image, histogram_descriptor, image_id, list_images, read_image
 from src.distances import to_distance
+from src.watershed import watershed_masks
 from src.masks import segment_paintings
 from src.texture import DESCRIPTORS, prepare
 
@@ -95,16 +96,20 @@ def rankings(dist, db_ids, k=10):
     return [[int(db_ids[i]) for i in np.argsort(row, kind="stable")[:k]] for row in dist]
 
 
-def find_paintings(img, segment=True, noise_filter="median 3x3"):
+# How the paintings are found: the Otsu masks (default), or watershed seeded from them (src/watershed.py).
+EXTRACTORS = {"otsu": segment_paintings, "watershed": watershed_masks}
+
+
+def find_paintings(img, segment=True, noise_filter="median 3x3", extractor="otsu"):
     """Denoised image and one mask per painting (the whole image if segment is False)."""
     if noise_filter != "none":
         img = denoise(img, noise_filter)
-    masks = segment_paintings(img) if segment else []
+    masks = EXTRACTORS[extractor](img) if segment else []
     return img, masks or [np.ones(img.shape[:2], bool)]
 
 
-def retrieve_paintings(img, db, db_ids, k=10, segment=True, names=FUSION, margin=MARGIN):
+def retrieve_paintings(img, db, db_ids, k=10, segment=True, names=FUSION, margin=MARGIN, extractor="otsu"):
     """Per painting of the photo, in reading order, the IDs of the k best museum images; and the masks."""
-    img, masks = find_paintings(img, segment)
+    img, masks = find_paintings(img, segment, extractor=extractor)
     dist = painting_distances([crop_painting(img, m, margin) for m in masks], db)
     return rankings(fuse(dist, names), db_ids, k), masks

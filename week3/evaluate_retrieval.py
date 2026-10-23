@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from src.descriptors import list_images, read_image
 from src.evaluation import flatten_paintings, mapk_paintings
-from src.painting_retrieval import (FUSION, MARGIN, TEXTURES, crop_painting, describe_database, find_paintings,
+from src.painting_retrieval import (EXTRACTORS, FUSION, MARGIN, TEXTURES, crop_painting, describe_database, find_paintings,
                                     fuse, painting_distances, rankings)
 
 try:
@@ -52,11 +52,12 @@ def main():
     parser.add_argument("--no-segment", action="store_true", help="the queries are already cropped (e.g. qsd1_w3)")
     parser.add_argument("--margin", type=float, default=MARGIN, help="fraction cut from every side of crops and museum images")
     parser.add_argument("--filter", default="median 3x3", help="filter for the images detected as noisy ('none' to skip)")
+    parser.add_argument("--extractor", default="otsu", choices=list(EXTRACTORS), help="how the paintings are found")
     parser.add_argument("--output-dir", default=os.path.join("outputs", "week3"))
     args = parser.parse_args()
 
     paths = list_images(args.query_dir)
-    found = [find_paintings(read_image(p), not args.no_segment, args.filter) for p in tqdm(paths, desc="paintings", unit="img")]
+    found = [find_paintings(read_image(p), not args.no_segment, args.filter, args.extractor) for p in tqdm(paths, desc="paintings", unit="img")]
     gt = pickle.load(open(os.path.join(args.query_dir, "gt_corresps.pkl"), "rb"))
     ours = "whole image" if args.no_segment else "our masks"
     sources = {ours: found}
@@ -82,7 +83,7 @@ def main():
     n = sum(len(g) for g in gt)
     final = " + ".join(FUSION)
     lines = [f"{os.path.basename(os.path.normpath(args.query_dir))}: {len(paths)} images, {n} paintings "
-             f"(1 painting = {1 / n:.3f} mAP@1); margin {args.margin:.0%}; noisy images filtered with {args.filter}",
+             f"(1 painting = {1 / n:.3f} mAP@1); margin {args.margin:.0%}; noisy images filtered with {args.filter}; paintings: {args.extractor}",
              f"{'descriptors':<44}" + "".join(f"{s + ': mAP@1':>26} {'mAP@5':>6}" for s in sources)]
     for name in dict.fromkeys(name for _, name in results):
         lines.append(f"{name:<44}" + "".join(f"{results[(s, name)][0]:>26.4f} {results[(s, name)][1]:>6.4f}" for s in sources))
