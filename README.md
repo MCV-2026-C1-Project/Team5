@@ -419,4 +419,54 @@ have the correct painting at rank 1:
 | DCT | cosine (L1 equal) | Every filter gives the same | 0.967 | 0.983 | 7/7 |
 | Haar wavelet | L1 | median 3x3 | 0.967 | 0.967 | 6/7 |
 
+### Task 3: up to two paintings per image
+
+`segment_paintings` in `src/masks.py` returns one mask per painting (at most two), in reading order
+(left to right, top to bottom if one is above the other). `week3/evaluate_masks.py` filters the noisy
+images first (Task 1, so the noise does not spoil the wall model), segments them and compares the union
+of the paintings with the annotated mask (precision, recall, F1), and the number of paintings found with
+the ground truth.
+
+```bash
+python week3/evaluate_masks.py --data data/qsd2_w3 --query-set qsd2_w3
+python week3/evaluate_masks.py --data data/qsd2_w3 --query-set qsd2_w3 --save-masks   # also writes the masks as .png
+```
+
+It starts from the Week 2 method (wall colour learnt from the borders, Mahalanobis distance, Otsu,
+closing, fill holes, opening) and changes four things:
+
+- **Otsu on log(1 + distance)** (`border_otsu_log`). With two paintings, Otsu on the distance put the
+  threshold between the wall and the most different painting, and a dark or greyish second painting fell
+  below it. The log compresses the large distances, so the threshold falls in the valley between the wall
+  and everything that is not wall.
+- **Opening of 5% of the shorter side** before splitting, to cut thin bridges (a rail or a line on the
+  wall) that joined two paintings into one region.
+- **Grouping instead of the largest region.** Regions smaller than 1% of the image or 5% of the largest
+  one are dropped (labels, specks); regions whose bounding boxes are closer than 3% of the longer side are
+  one painting (the panels of one work); the two largest groups are kept. The convex hull is taken per
+  painting, so the wall between two paintings is never filled.
+
+- **A pixel further than 4 from the wall is always painting** (`WALL_LIMIT`; 99.9% of a 3D Gaussian is
+  closer). Otsu only splits two groups: in image 9 of `qsd2_w3` the wall, the black of the painting and
+  its red are three, and Otsu cut between the black and the red, so the painting was lost and split in
+  two. Any limit between 3 and 4 gives the same.
+
+Results (the noisy images are filtered first; without the filter the masks are the same, 0.9654):
+
+| Set | Method | Precision | Recall | F1 | Worst F1 | Paintings counted right |
+|---|---|---|---|---|---|---|
+| **qsd2_w3** (39 paintings, 9 images with two) | Week 2: border_otsu+hull | 0.9790 | 0.9043 | 0.9292 | 0.56 | 28/30 |
+| | border_otsu_log, no hull | 0.9757 | 0.9487 | 0.9579 | 0.76 | 30/30 |
+| | **border_otsu_log + hull** | 0.9660 | 0.9690 | **0.9652** | 0.82 | **30/30** |
+| qsd2_w1 (one painting each) | Week 2: border_otsu+regions+hull | 0.9677 | 0.9477 | 0.9431 | 0.14 | 30/30 |
+| | **border_otsu_log + hull** | 0.9396 | 0.9885 | **0.9617** | 0.81 | 30/30 |
+
+The two paintings are always returned in the order of the ground truth (left to right). The worst images
+of `qsd2_w3` are 21 (0.82), a white canvas on a white wall, and 3 (0.84), whose silver frame has the colour
+of the wall and is lost.
+
+Before having `qsd2_w3`, the splitting was also checked on a synthetic set (the painting of another
+`qsd2_w1` query pasted on an extension of the wall of each photo): 29/30 images with both paintings found,
+all in the right order; the miss is the white painting of query 20 pasted small on a white wall.
+
 
