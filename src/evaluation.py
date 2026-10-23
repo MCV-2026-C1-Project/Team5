@@ -40,6 +40,26 @@ def mapk(actual, predicted, k):
     return float(np.mean(per_query_apk(actual, predicted, k)))
 
 
+def flatten_paintings(actual, predicted):
+    """Several paintings per image -> one query per painting of the ground truth.
+
+    actual: per image, the correct ID of each painting ([[a], [b, c], ...]); predicted: per image,
+    one ranked list per painting found, in the same order. A painting that was not found gets an
+    empty ranking (AP 0); extra paintings found are ignored.
+    """
+    flat_actual, flat_predicted = [], []
+    for ids, rankings in zip(actual, predicted):
+        for j, painting in enumerate(ids):
+            flat_actual.append([painting])
+            flat_predicted.append(rankings[j] if j < len(rankings) else [])
+    return flat_actual, flat_predicted
+
+
+def mapk_paintings(actual, predicted, k):
+    """mAP@k over the paintings of the ground truth (see flatten_paintings)."""
+    return mapk(*flatten_paintings(actual, predicted), k)
+
+
 def bootstrap_mapk(actual, predicted, k, n_bootstraps=1000, ci=0.95, seed=None):
     """Non-parametric bootstrap confidence interval and standard error for mAP@k.
     

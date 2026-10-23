@@ -470,3 +470,43 @@ Before having `qsd2_w3`, the splitting was also checked on a synthetic set (the 
 all in the right order; the miss is the white painting of query 20 pasted small on a white wall.
 
 
+
+### Task 4: retrieval with up to two paintings per image
+
+`src/painting_retrieval.py` is the whole pipeline for one photo: filter it if it is noisy (Task 1), find
+the paintings (Task 3), crop each one to the bounding box of its mask, describe it and rank the museum
+images. The result has one ranked list per painting, in reading order (`[[7, 25, ...], [44, 81, ...]]`).
+`week3/evaluate_retrieval.py` evaluates it per painting (`mapk_paintings` in `src/evaluation.py`: every
+painting of the ground truth is one query; a painting not found counts 0, an extra one is ignored).
+
+```bash
+python week3/evaluate_retrieval.py --query-dir data/qsd2_w3/qsd2_w3
+python week3/evaluate_retrieval.py --query-dir data/qsd1_w3/qsd1_w3 --no-segment   # cropped queries
+```
+
+Two things make it work:
+
+- **A 10% margin** is cut from every side of the crops and of the museum images. The edge of a crop is
+  where the mask errors are (a strip of wall, part of the frame), and the block descriptors shift with it:
+  DCT goes from 0.67 with our masks (0.95 with the annotated frames) to 0.79 with the margin.
+- **Several descriptors together.** Each one fails on different paintings, so their distances are put on
+  the same scale (shifted to 0 and divided by their median over the museum) and averaged: multiscale LBP,
+  DCT, Haar wavelet (Task 2) and the Week 2 colour histogram (YCrCb pyramid 1-2-4, 32 bins, chi-squared, on
+  the masked pixels). Colour alone suffers from the hue changes, texture alone from the crop, together they
+  find every painting.
+
+mAP@1 / mAP@5 per painting, margin 10% (`outputs/week3/retrieval_qsd2_w3.txt`, `retrieval_qsd1_w3.txt`):
+
+| Descriptors | qsd2_w3, our masks (39 paintings) | qsd2_w3, annotated frames | qsd1_w3 (30, cropped) |
+|---|---|---|---|
+| multiscale LBP | 0.846 / 0.859 | 0.872 / 0.877 | 1.000 / 1.000 |
+| DCT | 0.795 / 0.842 | 0.974 / 0.974 | 1.000 / 1.000 |
+| Haar wavelet | 0.949 / 0.962 | 0.949 / 0.957 | 1.000 / 1.000 |
+| colour (Week 2) | 0.821 / 0.843 | 0.897 / 0.910 | 1.000 / 1.000 |
+| multiscale LBP + DCT + colour | 0.974 / 0.987 | 0.974 / 0.987 | 1.000 / 1.000 |
+| **multiscale LBP + DCT + wavelet + colour** | **1.000 / 1.000** | 1.000 / 1.000 | **1.000 / 1.000** |
+
+Without the margin the same combination gives 0.923 / 0.928 on `qsd2_w3`, and with 5% or 15% 0.923 and
+0.949: 10% was chosen on these two sets, so the test sets may score lower. At every margin the
+combinations of three or four descriptors beat any descriptor alone (at 5%, DCT + wavelet + colour is the
+best with 0.974).
