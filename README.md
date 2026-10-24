@@ -510,3 +510,24 @@ Without the margin the same combination gives 0.923 / 0.928 on `qsd2_w3`, and wi
 0.949: 10% was chosen on these two sets, so the test sets may score lower. At every margin the
 combinations of three or four descriptors beat any descriptor alone (at 5%, DCT + wavelet + colour is the
 best with 0.974).
+
+### Task 5: blind competition submissions (QST1 and QST2)
+
+`week3/make_submission.py` generates the submission files for `qst1_w3` and `qst2_w3` following the required format and folder layout:
+
+- For each test query, returns top-10 matching BBDD integer IDs with an extra list level for multi-painting support:
+  `[[[p1_id0, ...], [p2_id0, ...]], [[p1_id0, ...]], ...]`.
+- For `qst2_w3`, saves predicted binary foreground masks as `00000.png` ... `00029.png` in the method folder.
+- Follows the required delivery layout:
+  `outputs/Team5/week3/QST1/method1/result.pkl`
+  `outputs/Team5/week3/QST2/method1/result.pkl`
+  `outputs/Team5/week3/QST2/method1/*.png`
+
+```bash
+# QST1 (cropped, single painting per image)
+python week3/make_submission.py --data data --query-set qst1_w3
+
+# QST2 (with background, up to two paintings per image - saves result.pkl and *.png masks)
+python week3/make_submission.py --data data --query-set qst2_w3
+```
+
