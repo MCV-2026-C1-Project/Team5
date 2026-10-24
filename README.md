@@ -8,10 +8,11 @@ queries can also be removed using only colour.
 ## Structure
 
 ```
-src/        shared code: descriptors, distances, retrieval, evaluation, masks, denoising, texture
+src/        shared code: descriptors, distances, retrieval, evaluation, masks, watershed, denoising, texture
 week1/      week 1 scripts (evaluation, submission, error analysis)
 week2/      week 2 scripts (descriptor search, background removal, retrieval with masks)
-week3/      week 3 scripts (noise detector calibration, noise filtering, texture descriptors)
+week3/      week 3 scripts (noise detector calibration, noise filtering, texture descriptors, painting
+            detection, retrieval, submission)
 data/       datasets (not committed)
 outputs/    results (not committed)
 ```
@@ -469,6 +470,25 @@ Before having `qsd2_w3`, the splitting was also checked on a synthetic set (the 
 `qsd2_w1` query pasted on an extension of the wall of each photo): 29/30 images with both paintings found,
 all in the right order; the miss is the white painting of query 20 pasted small on a white wall.
 
+**Watershed from the Otsu masks** (`watershed_masks` in `src/watershed.py`). The Otsu masks above decide how
+many paintings there are and roughly where, but their boundary is wherever the distance to the wall crosses
+the threshold. Watershed keeps the count and the position and moves the boundary: the core of each Otsu
+painting (its mask shrunk by 15% of its bounding box) is marked as sure painting, a strip of 3% along the
+image border as sure wall, and OpenCV's watershed grows them over the image (600 px on the longer side)
+until they meet, which happens where the image changes most, usually the outer edge of the frame. Each
+painting is then filled and replaced by its convex hull, as above. `week3/evaluate_masks.py` runs it as the
+last variant, so its per-image table and `--save-masks` are about it.
+
+| Set | Method | Precision | Recall | F1 | Worst F1 | Paintings counted right |
+|---|---|---|---|---|---|---|
+| qsd2_w3 | border_otsu_log + hull | 0.9660 | 0.9690 | 0.9652 | 0.82 | 30/30 |
+| | **watershed (Otsu seeds)** | **0.9805** | 0.9620 | **0.9698** | **0.87** | **30/30** |
+| qsd2_w1 | border_otsu_log + hull | 0.9396 | 0.9885 | 0.9617 | 0.81 | 30/30 |
+| | watershed (Otsu seeds) | 0.9403 | 0.9843 | 0.9600 | 0.82 | 30/30 |
+
+On `qsd2_w3` it mostly removes wall from the masks (precision 0.966 to 0.981) and fixes image 21, the white
+canvas on the white wall (0.82 to 0.996); the worst image is now 3 (0.87). On `qsd2_w1` it is equal.
+
 
 
 ### Task 4: retrieval with up to two paintings per image
@@ -511,6 +531,28 @@ Without the margin the same combination gives 0.923 / 0.928 on `qsd2_w3`, and wi
 combinations of three or four descriptors beat any descriptor alone (at 5%, DCT + wavelet + colour is the
 best with 0.974).
 
+**With watershed** (`--extractor watershed` in `evaluate_retrieval.py` and in the submission script; the
+default is still the Otsu masks):
+
+```bash
+python week3/evaluate_retrieval.py --query-dir data/qsd2_w3/qsd2_w3 --extractor watershed --output-dir outputs/week3/watershed
+python week3/evaluate_retrieval.py --query-dir data/qsd2_w3/qsd2_w3 --extractor watershed --margin 0.05 --output-dir outputs/week3/watershed_005
+```
+
+mAP@1 on `qsd2_w3` (39 paintings) at three margins:
+
+| Paintings found with | Descriptors | 5% | 10% | 15% |
+|---|---|---|---|---|
+| Otsu masks | multiscale LBP + DCT + wavelet + colour | 0.923 | 1.000 | 0.949 |
+| | DCT + wavelet + colour | 0.974 | 1.000 | 0.949 |
+| watershed | multiscale LBP + DCT + wavelet + colour | 0.949 | 1.000 | 0.949 |
+| | **DCT + wavelet + colour** | **1.000** | **1.000** | **0.974** |
+
+At 10% both fusions find every painting with both extractors. Watershed is never worse, and at 5% and 15%
+its crops lose fewer paintings. DCT alone, the descriptor most sensitive to the crop, goes from 0.795 to
+0.821 at 10% (0.769 to 0.872 at 5%, 0.821 to 0.897 at 15%). On `qsd1_w3` (cropped, no segmentation) both
+fusions give 1.000 at 5%, 10% and 15%.
+
 ### Task 5: blind competition submissions (QST1 and QST2)
 
 `week3/make_submission.py` generates the submission files for `qst1_w3` and `qst2_w3` following the required format and folder layout:
@@ -531,3 +573,35 @@ python week3/make_submission.py --data data --query-set qst1_w3
 python week3/make_submission.py --data data --query-set qst2_w3
 ```
 
+**The delivered files.** This week only one method per test set is accepted, in the `method1` folder. The
+delivered files were made with `week3/make_submission_final.py`, which runs three fusions (method1:
+multiscale LBP + DCT + wavelet + colour; method2: DCT + wavelet + colour; method3: multiscale LBP + DCT +
+colour), writes each one to its own `methodK` folder in the same format, and an analysis of every image
+(`report.html`, `cases.txt`, `summary.txt`) to `--analysis-dir`. Its method2 output was copied into the
+delivered `method1` folders.
+
+| | QST1-W3 (50 cropped images) | QST2-W3 (30 images with background) |
+|---|---|---|
+| Descriptors | DCT + Haar wavelet + colour | DCT + Haar wavelet + colour |
+| Paintings | the whole image (no segmentation) | watershed from the Otsu masks |
+| Crop margin | 10% | 10% |
+| Noise | median 3x3 on the images detected as noisy | median 3x3 on the images detected as noisy |
+
+Why, from the development sets (tables of Tasks 3 and 4):
+
+- **Margin 10%**: on `qsd2_w3` it is the only margin at which both fusions find every painting, with the
+  Otsu masks and with watershed; on `qsd1_w3` every margin from 5% to 15% gives 1.000.
+- **DCT + wavelet + colour** instead of the four descriptors: equal at 10% on both sets, and more stable
+  when the crop changes (with watershed on `qsd2_w3`, 1.000 / 1.000 / 0.974 at 5% / 10% / 15%, against
+  0.949 / 1.000 / 0.949).
+- **Watershed** for QST2: better masks on `qsd2_w3` and fewer paintings lost when the margin changes.
+
+```bash
+# QST1 (cropped): no segmentation
+python week3/make_submission_final.py --data data --query-dir data/qst1_w3 --no-segment --output-dir outputs/final_run --analysis-dir outputs/week3/final_analysis
+# QST2 (with background): watershed
+python week3/make_submission_final.py --data data --query-dir data/qst2_w3 --extractor watershed --output-dir outputs/final_run --analysis-dir outputs/week3/final_analysis
+```
+
+The delivered files are `outputs/final_run/QST1/method2/result.pkl` and `outputs/final_run/QST2/method2/`
+(`result.pkl` and the 30 masks), copied to `Team5/week3/QST1/method1/` and `Team5/week3/QST2/method1/`.

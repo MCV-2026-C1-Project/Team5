@@ -8,3 +8,4 @@ plot_failures.py
 plot_test_predictions.py
 sweep.py
 src/boxes.py
+week3/compare_runs.py
