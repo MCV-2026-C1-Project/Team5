@@ -651,3 +651,24 @@ of them goes from 36, below the unknown threshold, to 69.
 unknown painting is rejected and 2 known ones are wrongly rejected (unknown F1 0.909). The 4 paintings that are not
 right: 128, a painting behind a plastic sheet whose reflections change with the view (7 inliers); 11, a uniform
 grey canvas (0 inliers); and the two paintings of image 28, which the Week 3 extraction merges into one crop.
+
+### Task 3: comparison with Week 3
+
+`week4/compare_w3_vs_w4.py` compares the delivered Week 3 method (DCT + Haar wavelet + colour fusion, 10% margin)
+with the Week 4 method (RootSIFT, ratio 0.75, RANSAC, unknown below 44 inliers) on `qsd1_w4`. Both get the same
+paintings (median filter on noisy images, watershed), so only the description and ranking change. The output is
+`outputs/week4/comparison_w3_vs_w4.txt`.
+
+```bash
+python week4/compare_w3_vs_w4.py
+```
+
+| | All paintings (39) mAP@1 / @5 | Known paintings (29) mAP@1 / @5 | Unknown F1 | Time per painting |
+|---|---|---|---|---|
+| Week 3 (DCT + wavelet + colour) | 0.692 / 0.692 | 0.931 / 0.931 | - | 0.12 s |
+| Week 4 (RootSIFT, threshold 44) | 0.897 / 0.906 | 0.862 / 0.874 | 0.909 | 1.12 s |
+
+Week 3 cannot reject a painting that is not in the museum, so it loses the 10 unknowns; on the known paintings it is
+slightly better and about 10 times faster. Week 4 rejects all 10 unknowns and wrongly rejects 2 known ones
+(painting 128 behind a plastic sheet and painting 11, a flat grey canvas, which Week 3 gets right). Image 28 fails in both
+systems because the extraction merges its two paintings into one crop.
