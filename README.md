@@ -605,3 +605,49 @@ python week3/make_submission_final.py --data data --query-dir data/qst2_w3 --ext
 
 The delivered files are `outputs/final_run/QST1/method2/result.pkl` and `outputs/final_run/QST2/method2/`
 (`result.pkl` and the 30 masks), copied to `Team5/week3/QST1/method1/` and `Team5/week3/QST2/method1/`.
+## Week 4
+
+### Tasks 1-2: keypoints, local descriptors, matching and unknown paintings
+
+`src/keypoints.py` describes a painting with keypoints and local descriptors and scores it against a museum image;
+`week4/compute_scores.py` scores every query painting against every museum image for a grid of settings, and
+`week4/analyze_keypoints.py` makes the choices, the tables (`outputs/week4/keypoint_results.txt`,
+`outputs/week4/results.json`) and the figures. `week4/plot_examples.py` adds the noise study and the pictures
+(`outputs/week4/examples.json`).
+
+```bash
+python week4/compute_scores.py --contrast 0.04                         # SIFT, RootSIFT, ORB, AKAZE on the 3 query sets
+python week4/compute_scores.py --methods RootSIFT --contrast 0.02      # DoG contrast thresholds (0.02 is the default)
+python week4/compute_scores.py --methods RootSIFT --contrast 0.01
+python week4/analyze_keypoints.py
+python week4/plot_examples.py --example 2 --failure 8 0
+```
+
+**Pipeline for one painting.** The paintings of the photo are found as in Week 3 (median filter on the noisy
+images, watershed extraction) and cropped to their bounding box. Each crop and each museum image is converted to grey
+(the hue changes do not reach gradients of the intensity) and resized to 512 px on the longer side, and its 1,000
+strongest keypoints are described. For every museum image: the two nearest museum descriptors of every query
+descriptor (tentative matches), Lowe's ratio test (d1 < 0.75 d2), and a RANSAC homography (a painting is planar);
+the score is the number of inliers. The museum is ranked by score, and if the best score is below 44 inliers the
+painting is unknown (`[-1]`).
+
+**How the choices were made.** Everything is chosen on `qsd1_w4` (39 paintings, 10 of them not in the museum).
+`qsd2_w3` and `qsd1_w3` are kept to check the choices: they have no unknown paintings, so unknowns are simulated by
+removing the correct museum image (the best score left is that of the best wrong image).
+
+| Decision | Options (qsd1_w4) | Chosen | Why | Check on qsd2_w3 / qsd1_w3 |
+|---|---|---|---|---|
+| Local feature and distance | SIFT (L2), RootSIFT (Hellinger), ORB (Hamming), AKAZE (Hamming): all mAP@1 0.862 on the known paintings | RootSIFT | best mAP@5 (0.879) and widest gap: correct image 197 inliers, best wrong 7 (median) | best of the four: mAP@1 0.949 / 0.967 |
+| DoG contrast threshold | 0.04, 0.02, 0.01: same mAP@1 | 0.02 | flat paintings keep keypoints (painting 11: 42 -> 108); interval of best unknown F1 15-30 -> 24-65 | unknown F1 0.897 -> 0.938 / 0.897 -> 0.984 |
+| Ratio test | 0.6 to 0.9, and none | 0.75 | without it every museum image gets ~1,000 matches (mAP 0); 0.75 has the best mAP@5 | |
+| RANSAC | with / without | with | best wrong image 18 -> 8 matches, best unknown 56 -> 23, correct 250 -> 220 | |
+| Unknown threshold | 1 to 100 inliers | 44 | middle of the interval with the best F1 (24-65) | unknown F1 0.938 / 0.984 |
+
+**Noise.** On the 7 known noisy paintings of `qsd1_w4` (cut with the annotated frames so only the filter changes),
+the 3x3 median raises the inliers with the correct image from 134 to 184 (median; 277 on the clean originals). One
+of them goes from 36, below the unknown threshold, to 69.
+
+**Results on qsd1_w4** (39 paintings): mAP@1 0.897, mAP@5 0.906 (0.641 / 0.658 without the unknown test); every
+unknown painting is rejected and 2 known ones are wrongly rejected (unknown F1 0.909). The 4 paintings that are not
+right: 128, a painting behind a plastic sheet whose reflections change with the view (7 inliers); 11, a uniform
+grey canvas (0 inliers); and the two paintings of image 28, which the Week 3 extraction merges into one crop.
