@@ -672,3 +672,22 @@ Week 3 cannot reject a painting that is not in the museum, so it loses the 10 un
 slightly better and about 10 times faster. Week 4 rejects all 10 unknowns and wrongly rejects 2 known ones
 (painting 128 behind a plastic sheet and painting 11, a flat grey canvas, which Week 3 gets right). Image 28 fails in both
 systems because the extraction merges its two paintings into one crop.
+
+### Task 4: blind competition submission (QST1-W4)
+
+`week4/make_submission.py` generates the submission files for `qst1_w4` following the required format and folder layout:
+
+- Uses the best pipeline identified in Tasks 1-3: watershed segmentation, impulse noise filtering (3x3 median on detected noisy images), RootSIFT local features (contrast threshold 0.02, 1000 features, 512 px max side), Lowe's ratio test (0.75), and RANSAC homography geometric verification.
+- For each test query, returns top-10 matching BBDD integer IDs per painting in reading order, or `[-1]` for unknown paintings (best inliers < 44):
+  `[[[p1_id0, ...], [p2_id0, ...]], [[-1]], ...]`.
+- Saves predicted binary foreground masks as `00000.png` ... `00029.png` in the method folder.
+- Follows the required delivery layout:
+  `Team5/week4/QST1/method1/result.pkl`
+  `outputs/Team5/week4/QST1/method1/result.pkl`
+  `Team5/week4/QST1/method1/*.png`
+- Generates diagnostic reports in `outputs/week4/analysis/qst1_w4/` (`report.html`, `cases.txt`, `summary.txt`, and per-image visual inspection plots in `images/`).
+
+```bash
+# Run Week 4 submission on QST1-W4
+python week4/make_submission.py --data data --query-dir data/w4/qst1_w4
+```
