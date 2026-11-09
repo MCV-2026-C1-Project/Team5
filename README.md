@@ -1,9 +1,8 @@
 # Team 5 - Museum painting retrieval (C1)
 
-Query-by-Example retrieval: given a photo of a painting, return the most similar
-paintings of the museum collection (BBDD). Images are described with colour
-histograms and compared with a histogram distance. From week 2 the background of the
-queries can also be removed using only colour.
+Week 4 slides: https://docs.google.com/presentation/d/16uWHKtKEJDJBGNX9gvGfB-dzM0nHJK2xRfHr-E5GMbE/edit?usp=sharing
+
+
 
 ## Structure
 
@@ -13,6 +12,7 @@ week1/      week 1 scripts (evaluation, submission, error analysis)
 week2/      week 2 scripts (descriptor search, background removal, retrieval with masks)
 week3/      week 3 scripts (noise detector calibration, noise filtering, texture descriptors, painting
             detection, retrieval, submission)
+week4/
 data/       datasets (not committed)
 outputs/    results (not committed)
 ```
