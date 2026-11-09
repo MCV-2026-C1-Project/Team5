@@ -47,6 +47,8 @@ data/
 ├── qsd1_w3/     00000.jpg ... 00029.jpg, gt_corresps.pkl, augmentations.pkl (what was done to
 │                each query: impulse noise, hue change or nothing), non_augmented/ (clean versions)
 └── qsd2_w3/     same, with background and up to two paintings per image
+└── qsd1_w4/     
+
 ```
 
 Only the `.jpg` files of BBDD are used. In `qsd2_w1` the `.png` files are the
